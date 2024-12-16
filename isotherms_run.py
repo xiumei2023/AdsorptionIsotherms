@@ -19,7 +19,8 @@ def freundlich_isotherm(Ce, k_F, n):
 # Function for Isotherm Fitting
 def run_isotherm_fitting(uploaded_file):
     results_list = []
-    figure_paths = []  # Store in-memory figures
+    figure_paths = []
+    combined_data = []  # 用于保存原始数据和拟合数据
 
     # Load Excel file
     excel_data = pd.ExcelFile(uploaded_file)
@@ -27,68 +28,66 @@ def run_isotherm_fitting(uploaded_file):
 
     # Loop through each sheet
     for sheet in sheet_names:
-        # Load data and clean
         data = pd.read_excel(uploaded_file, sheet_name=sheet, skiprows=1, usecols=[0, 1])
         data.columns = ['Ce(mg/L)', 'qe(mg/g)']
         Ce_data = data['Ce(mg/L)'].dropna().values
         qe_data = data['qe(mg/g)'].dropna().values
 
-        # Skip sheets with no valid data
         if len(Ce_data) == 0 or len(qe_data) == 0:
             st.warning(f"No valid data in {sheet}. Skipping...")
             continue
 
-        # lmfit setup for Langmuir and Freundlich models
+        # lmfit setup
         langmuir_model = Model(langmuir_isotherm)
         langmuir_params = langmuir_model.make_params(q_m=np.max(qe_data), k_L=0.1)
-
         freundlich_model = Model(freundlich_isotherm)
         freundlich_params = freundlich_model.make_params(k_F=1.0, n=1.0)
 
-        # Create figure
+        # Fit models
+        langmuir_result = langmuir_model.fit(qe_data, Ce=Ce_data, params=langmuir_params)
+        freundlich_result = freundlich_model.fit(qe_data, Ce=Ce_data, params=freundlich_params)
+
+        # Combine original and fitting data into a DataFrame
+        combined_df = pd.DataFrame({
+            "Ce (mg/L)": Ce_data,
+            "qe (mg/g)": qe_data,
+            "Langmuir Fit": langmuir_result.best_fit,
+            "Freundlich Fit": freundlich_result.best_fit
+        })
+        combined_df['Sheet'] = sheet  # Add sheet name for clarity
+        combined_data.append(combined_df)
+
+        # Store fitting results
+        results_list.append({
+            'Sheet': sheet, 'Model': 'Langmuir',
+            'q_m': langmuir_result.params['q_m'].value,
+            'k_L': langmuir_result.params['k_L'].value
+        })
+        results_list.append({
+            'Sheet': sheet, 'Model': 'Freundlich',
+            'k_F': freundlich_result.params['k_F'].value,
+            'n': freundlich_result.params['n'].value
+        })
+
+        # Generate Figure
         fig, ax = plt.subplots(figsize=(8, 6))
         ax.scatter(Ce_data, qe_data, color='black', label="Data")
-
-        try:
-            # Langmuir Fitting
-            langmuir_result = langmuir_model.fit(qe_data, Ce=Ce_data, params=langmuir_params)
-            ax.plot(Ce_data, langmuir_result.best_fit, 'r-', label="Langmuir Fit")
-            r_squared_langmuir = 1 - np.sum(langmuir_result.residual**2) / np.sum((qe_data - np.mean(qe_data))**2)
-            results_list.append({
-                'Sheet': sheet, 'Model': 'Langmuir', 
-                'q_m': langmuir_result.params['q_m'].value, 'k_L': langmuir_result.params['k_L'].value, 
-                'R^2': r_squared_langmuir
-            })
-        except Exception as e:
-            st.warning(f"Langmuir fitting failed for {sheet}: {e}")
-
-        try:
-            # Freundlich Fitting
-            freundlich_result = freundlich_model.fit(qe_data, Ce=Ce_data, params=freundlich_params)
-            ax.plot(Ce_data, freundlich_result.best_fit, 'g--', label="Freundlich Fit")
-            r_squared_freundlich = 1 - np.sum(freundlich_result.residual**2) / np.sum((qe_data - np.mean(qe_data))**2)
-            results_list.append({
-                'Sheet': sheet, 'Model': 'Freundlich', 
-                'k_F': freundlich_result.params['k_F'].value, 'n': freundlich_result.params['n'].value, 
-                'R^2': r_squared_freundlich
-            })
-        except Exception as e:
-            st.warning(f"Freundlich fitting failed for {sheet}: {e}")
-
-        # Customize and Save Figure to Memory
+        ax.plot(Ce_data, langmuir_result.best_fit, 'r-', label="Langmuir Fit")
+        ax.plot(Ce_data, freundlich_result.best_fit, 'g--', label="Freundlich Fit")
         ax.set_xlabel("Ce (mg/L)")
         ax.set_ylabel("qe (mg/g)")
         ax.legend()
         ax.set_title(f"Isotherm Fits for {sheet}")
-        
+
         fig_io = BytesIO()
         plt.savefig(fig_io, format="png")
         plt.close(fig)
         figure_paths.append(fig_io)
 
-    # Return Results and Figures
+    # Return Results
     summary_df = pd.DataFrame(results_list)
-    return summary_df, figure_paths
+    combined_export = pd.concat(combined_data, axis=0)  # Combine all sheets data
+    return summary_df, figure_paths, combined_export
 
 # Streamlit File Upload
 uploaded_file = st.file_uploader("Upload Excel File (Isotherm Data)", type=["xlsx"])
@@ -96,23 +95,30 @@ uploaded_file = st.file_uploader("Upload Excel File (Isotherm Data)", type=["xls
 # Run Analysis
 if uploaded_file:
     st.success("File uploaded successfully.")
-    summary_df, figure_paths = run_isotherm_fitting(uploaded_file)
+    summary_df, figure_paths, combined_export = run_isotherm_fitting(uploaded_file)
 
     # Display Results Table
     if summary_df is not None and not summary_df.empty:
         st.write("### Fitting Results")
         st.dataframe(summary_df)
 
-        # Provide a Download Option for Results
+        # Provide a Download Option for Fitting Results
         csv_data = summary_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Fitting Results as CSV",
             data=csv_data,
-            file_name="isotherm_fitting_results.csv",
+            file_name="fitting_results.csv",
             mime="text/csv"
         )
-    else:
-        st.error("No fitting results to display.")
+
+        # Provide Download for Combined Original + Fitting Data
+        combined_csv = combined_export.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Original and Fitting Data",
+            data=combined_csv,
+            file_name="original_and_fitting_data.csv",
+            mime="text/csv"
+        )
 
     # Display Figures
     if figure_paths:
