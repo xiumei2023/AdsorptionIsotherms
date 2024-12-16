@@ -109,4 +109,4 @@ if uploaded_file:
     if figure_paths:
         st.write("### Fitting Figures")
         for idx, fig_io in enumerate(figure_paths):
-            st.image(fig_io, caption=f"Sheet {idx + 1}", use_column_width=True)
+            st.image(fig_io, caption=f"Sheet {idx + 1}", use_container_width=True)
