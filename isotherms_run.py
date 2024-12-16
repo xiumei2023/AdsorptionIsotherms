@@ -102,6 +102,15 @@ if uploaded_file:
     if summary_df is not None and not summary_df.empty:
         st.write("### Fitting Results")
         st.dataframe(summary_df)
+
+        # Provide a Download Option for Results
+        csv_data = summary_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Fitting Results as CSV",
+            data=csv_data,
+            file_name="isotherm_fitting_results.csv",
+            mime="text/csv"
+        )
     else:
         st.error("No fitting results to display.")
 
@@ -110,4 +119,3 @@ if uploaded_file:
         st.write("### Fitting Figures")
         for idx, fig_io in enumerate(figure_paths):
             st.image(fig_io, caption=f"Sheet {idx + 1}", use_container_width=True)
-
