@@ -9,6 +9,11 @@ from io import BytesIO
 # Streamlit Title
 st.title("Isotherm Data Analysis Interface")
 
+# Reminder for File Format
+st.info("Reminder: The first row of the uploaded Excel file must contain column headers.\n\n"
+        "Required Columns:\n- **First Column**: 'Ce (mg/L)'\n- **Second Column**: 'qe (mg/g)'.\n\n"
+        "From the second row onwards, numerical data is required.")
+
 # Define Langmuir and Freundlich Models
 def langmuir_isotherm(Ce, q_m, k_L):
     return (q_m * k_L * Ce) / (1 + k_L * Ce)
@@ -20,7 +25,7 @@ def freundlich_isotherm(Ce, k_F, n):
 def run_isotherm_fitting(uploaded_file):
     results_list = []
     figure_paths = []
-    combined_data = []  # 用于保存原始数据和拟合数据
+    combined_data = []  # Store original data and fitting results
 
     # Load Excel file
     excel_data = pd.ExcelFile(uploaded_file)
@@ -29,17 +34,18 @@ def run_isotherm_fitting(uploaded_file):
     # Loop through each sheet
     for sheet in sheet_names:
         data = pd.read_excel(uploaded_file, sheet_name=sheet, skiprows=1, usecols=[0, 1])
-        data.columns = ['Ce(mg/L)', 'qe(mg/g)']
-        Ce_data = data['Ce(mg/L)'].dropna().values
-        qe_data = data['qe(mg/g)'].dropna().values
+        data.columns = ['Ce (mg/L)', 'qe (mg/g)']
+        Ce_data = data['Ce (mg/L)'].dropna().values
+        qe_data = data['qe (mg/g)'].dropna().values
 
         if len(Ce_data) == 0 or len(qe_data) == 0:
-            st.warning(f"No valid data in {sheet}. Skipping...")
+            st.warning(f"No valid data in sheet '{sheet}'. Skipping...")
             continue
 
         # lmfit setup
         langmuir_model = Model(langmuir_isotherm)
         langmuir_params = langmuir_model.make_params(q_m=np.max(qe_data), k_L=0.1)
+
         freundlich_model = Model(freundlich_isotherm)
         freundlich_params = freundlich_model.make_params(k_F=1.0, n=1.0)
 
@@ -54,7 +60,7 @@ def run_isotherm_fitting(uploaded_file):
             "Langmuir Fit": langmuir_result.best_fit,
             "Freundlich Fit": freundlich_result.best_fit
         })
-        combined_df['Sheet'] = sheet  # Add sheet name for clarity
+        combined_df['Sheet'] = sheet  # Add sheet name
         combined_data.append(combined_df)
 
         # Store fitting results
@@ -79,6 +85,7 @@ def run_isotherm_fitting(uploaded_file):
         ax.legend()
         ax.set_title(f"Isotherm Fits for {sheet}")
 
+        # Save figure to memory
         fig_io = BytesIO()
         plt.savefig(fig_io, format="png")
         plt.close(fig)
@@ -86,7 +93,7 @@ def run_isotherm_fitting(uploaded_file):
 
     # Return Results
     summary_df = pd.DataFrame(results_list)
-    combined_export = pd.concat(combined_data, axis=0)  # Combine all sheets data
+    combined_export = pd.concat(combined_data, axis=0)
     return summary_df, figure_paths, combined_export
 
 # Streamlit File Upload
@@ -102,12 +109,12 @@ if uploaded_file:
         st.write("### Fitting Results")
         st.dataframe(summary_df)
 
-        # Provide a Download Option for Fitting Results
+        # Provide Download for Fitting Results
         csv_data = summary_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Fitting Results as CSV",
             data=csv_data,
-            file_name="fitting_results.csv",
+            file_name="isotherm_fitting_results.csv",
             mime="text/csv"
         )
 
@@ -116,7 +123,7 @@ if uploaded_file:
         st.download_button(
             label="📥 Download Original and Fitting Data",
             data=combined_csv,
-            file_name="original_and_fitting_data.csv",
+            file_name="isotherm_original_and_fitting_data.csv",
             mime="text/csv"
         )
 
