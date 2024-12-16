@@ -9,22 +9,6 @@ from io import BytesIO
 # Streamlit Title
 st.title("Isotherm Data Analysis Interface")
 
-# Validation Function
-def validate_isotherm_data(data):
-    """Validate uploaded Excel data format."""
-    if len(data.columns) != 2:
-        return False, "The file must contain exactly two columns: Ce and qe."
-
-    # Check if first row has headers (strings) and rest are numbers
-    col1, col2 = data.columns
-    if not isinstance(data.iloc[0, 0], str) or not isinstance(data.iloc[0, 1], str):
-        return False, "The first row must contain column names."
-
-    if not np.issubdtype(data.iloc[1:, 0].dtype, np.number) or not np.issubdtype(data.iloc[1:, 1].dtype, np.number):
-        return False, "Second row onwards must contain numerical values for Ce and qe."
-
-    return True, None
-
 # Define Langmuir and Freundlich Models
 def langmuir_isotherm(Ce, q_m, k_L):
     return (q_m * k_L * Ce) / (1 + k_L * Ce)
@@ -43,7 +27,7 @@ def run_isotherm_fitting(uploaded_file):
 
     # Loop through each sheet
     for sheet in sheet_names:
-        # Load and clean data
+        # Load data and clean
         data = pd.read_excel(uploaded_file, sheet_name=sheet, skiprows=1, usecols=[0, 1])
         data.columns = ['Ce(mg/L)', 'qe(mg/g)']
         Ce_data = data['Ce(mg/L)'].dropna().values
@@ -71,8 +55,8 @@ def run_isotherm_fitting(uploaded_file):
             ax.plot(Ce_data, langmuir_result.best_fit, 'r-', label="Langmuir Fit")
             r_squared_langmuir = 1 - np.sum(langmuir_result.residual**2) / np.sum((qe_data - np.mean(qe_data))**2)
             results_list.append({
-                'Sheet': sheet, 'Model': 'Langmuir',
-                'q_m': langmuir_result.params['q_m'].value, 'k_L': langmuir_result.params['k_L'].value,
+                'Sheet': sheet, 'Model': 'Langmuir', 
+                'q_m': langmuir_result.params['q_m'].value, 'k_L': langmuir_result.params['k_L'].value, 
                 'R^2': r_squared_langmuir
             })
         except Exception as e:
@@ -84,19 +68,19 @@ def run_isotherm_fitting(uploaded_file):
             ax.plot(Ce_data, freundlich_result.best_fit, 'g--', label="Freundlich Fit")
             r_squared_freundlich = 1 - np.sum(freundlich_result.residual**2) / np.sum((qe_data - np.mean(qe_data))**2)
             results_list.append({
-                'Sheet': sheet, 'Model': 'Freundlich',
-                'k_F': freundlich_result.params['k_F'].value, 'n': freundlich_result.params['n'].value,
+                'Sheet': sheet, 'Model': 'Freundlich', 
+                'k_F': freundlich_result.params['k_F'].value, 'n': freundlich_result.params['n'].value, 
                 'R^2': r_squared_freundlich
             })
         except Exception as e:
             st.warning(f"Freundlich fitting failed for {sheet}: {e}")
 
-        # Save figure to memory
+        # Customize and Save Figure to Memory
         ax.set_xlabel("Ce (mg/L)")
         ax.set_ylabel("qe (mg/g)")
         ax.legend()
         ax.set_title(f"Isotherm Fits for {sheet}")
-
+        
         fig_io = BytesIO()
         plt.savefig(fig_io, format="png")
         plt.close(fig)
@@ -112,28 +96,18 @@ uploaded_file = st.file_uploader("Upload Excel File (Isotherm Data)", type=["xls
 # Run Analysis
 if uploaded_file:
     st.success("File uploaded successfully.")
+    summary_df, figure_paths = run_isotherm_fitting(uploaded_file)
 
-    # Load and Validate the Data
-    try:
-        temp_df = pd.read_excel(uploaded_file, header=None)
-        valid, error_message = validate_isotherm_data(temp_df)
-        if not valid:
-            st.error(f"Validation Error: {error_message}")
-        else:
-            summary_df, figure_paths = run_isotherm_fitting(uploaded_file)
+    # Display Results Table
+    if summary_df is not None and not summary_df.empty:
+        st.write("### Fitting Results")
+        st.dataframe(summary_df)
+    else:
+        st.error("No fitting results to display.")
 
-            # Display Results Table
-            if summary_df is not None and not summary_df.empty:
-                st.write("### Fitting Results")
-                st.dataframe(summary_df)
-            else:
-                st.error("No fitting results to display.")
+    # Display Figures
+    if figure_paths:
+        st.write("### Fitting Figures")
+        for idx, fig_io in enumerate(figure_paths):
+            st.image(fig_io, caption=f"Sheet {idx + 1}", use_container_width=True)
 
-            # Display Figures
-            if figure_paths:
-                st.write("### Fitting Figures")
-                for idx, fig_io in enumerate(figure_paths):
-                    st.image(fig_io, caption=f"Sheet {idx + 1}", use_container_width=True)
-
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
